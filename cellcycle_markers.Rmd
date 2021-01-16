@@ -1,0 +1,99 @@
+---
+output: html_document
+title: "Human Cell Cycle Markers for Cell Cycle Scoring in scRNA-seq Analysis"
+author: "Mira Sohn" 
+---
+
+
+#### - Tutorial: [HBC training "Cell cycle scoring"](https://github.com/hbctraining/scRNA-seq_online/blob/master/lessons/cell_cycle_scoring.md) 
+
+#### - List of cell cycle genes by species: [Tirosh, I. et al.](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4944528), [HBC training](https://github.com/hbc/tinyatlas/tree/master/cell_cycle)
+
+
+```{r global_options, include=FALSE}
+
+
+knitr::opts_chunk$set(
+    warning=FALSE,
+    message=FALSE
+    )
+
+
+```
+
+## Loading packages 
+
+#### - Manuals: [AnnotationHub](http://bioconductor.org/packages/release/bioc/vignettes/AnnotationHub/inst/doc/AnnotationHub-HOWTO.html), [Seurat](https://satijalab.org/seurat)
+
+```{r loading_packages}
+
+library(tidyverse)
+library(AnnotationHub)
+library(Seurat)
+
+```
+
+
+## Importing a list of cell cycle marker genes
+
+```{r importing_cellcycle_genes}
+
+# Import a dataset storing cell cycle genes
+cc.genes <- read_csv("https://raw.githubusercontent.com/hbc/tinyatlas/master/cell_cycle/Homo_sapiens.csv")
+
+# Set species and DB name
+organism <- "Homo sapiens"
+DB <- "EnsDb"
+
+
+```
+
+## Bring the AnnotationHub DB 
+
+```{r annotationhub}
+
+# Connect to AnnotationHub
+ah <- AnnotationHub(hub=getAnnotationHubOption("URL"))
+
+# Bring the Ensembl DB 
+anno.db <- query(ah, 
+                 pattern=c(organism, DB), 
+                 ignore.case=T)
+
+# Find the id from most recent annotation data
+id <- mcols(anno.db) %>% 
+    rownames() %>%
+    tail(1)
+
+# Download the most recent annotation table 
+id.db <- ah[[id]]
+
+# Extract gene-level info and save as a data frame 
+gene.db <- genes(id.db, return.type="data.frame")
+
+```
+
+## Sorting S and G2M phase genes
+
+```{r sgenes_g2mgenes}
+
+# Combine two data frames
+cc.genes <- inner_join(cc.genes, gene.db, by=c("geneID"="gene_id"))
+
+# Create a vector storing S phase genes
+s.genes <- subset(cc.genes, phase=="S")$gene_name
+
+# Create a vector storing G2M phase genes
+g2m.genes <- subset(cc.genes, phase=="G2/M")$gene_name
+
+# Explore the outputs
+head(s.genes)
+head(g2m.genes)
+
+```
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
