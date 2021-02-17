@@ -837,7 +837,7 @@ print(integ.seurat[["pca"]],
 
 ### Clustering 
 
-#### - Seurat provides a graph-based clustering using K-nearest neighbot (KNN) by defaut. 
+#### - Seurat provides a graph-based clustering using K-nearest neighbor (KNN) by defaut. 
 
 #### - In the **FindClusters()** function, the argument **"resolution"** is used to determine granularity. Higher values result in more clusters. In case of a dataset of 3000-5000 cells, test the resolution between 0.4 and 1.4 before deciding the best resolution setting.
 
