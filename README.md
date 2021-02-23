@@ -19,7 +19,7 @@
 
 - Pseudobulk DE analysis in AC vs PA by cluster: [scRNAseq_v3.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v3.Rmd)
 
-- Pseudobulk DE analysis and GSEA in AC vs PA in ECM and CTL/NK clusters: [scRNAseq_v4.Rmd]
+- Pseudobulk DE analysis and GSEA in AC vs PA in ECM and CTL/NK clusters: [scRNAseq_v4.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v4.Rmd)
 
 
 
