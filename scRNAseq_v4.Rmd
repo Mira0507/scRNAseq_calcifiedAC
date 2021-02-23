@@ -44,6 +44,7 @@ library(DESeq2)
 library(gridExtra)
 library(clusterProfiler)
 library(DOSE)
+library(org.Hs.eg.db)
 
 
 ```
@@ -808,15 +809,18 @@ for (x in my.clusters) {
                         annot.list[[x]], 
                         t1)
 
+    print(hmap.fdr.list[[x]])
+
     hmap.lfc.list[[x]] <- ex.heatmap.fn(lfc20.mtx.list[[x]],
                         TRUE, 
                         annot.list[[x]],
                         t2)
 
+    print(hmap.lfc.list[[x]])
+
 }
 
 
-hmap.lfc.list[[2]]
 
 for (x in my.clusters) {
 
@@ -844,11 +848,17 @@ for (x in my.clusters) {
 
 #### - Package: [clusterProfiler](https://bioconductor.org/packages/release/bioc/html/clusterProfiler.html), [AnnotationHub](https://bioconductor.org/packages/release/bioc/html/AnnotationHub.html)
 
+#### - Note: Somehow EnsDb db causes en error when running GSEA. So it is recommended to set the OrgDb argument to org.Hs.eg.db (for humen) or org.Mm.eg.db (for mouse) instead. 
+
+
+
+
 
 ```{r annotationhub}
 
 # Set species and DB namedb
 organism <- "Homo sapiens"
+organism.kegg <- "hsa"
 DB <- "EnsDb"   # e.g. EnsDb, OrgDb, etc
 
 # Connect to AnnotationHub
@@ -870,10 +880,12 @@ id.db <- ah[[id]]
 # Extract gene-level info and save as a data frame 
 gene.db <- genes(id.db, return.type="data.frame")
 
+
 ```
 
-```{r prep_GSEA}
+```{r GSEA}
 
+# Initialize a list storing GSEA objects by cluster
 gse.list <- dds.list
 
 for (x in my.clusters) {
@@ -885,7 +897,7 @@ for (x in my.clusters) {
     geneList <- unique(df$log2FoldChange)
 
     # Name: genes
-    names(geneList) <- unique(df$Gene)
+    names(geneList) <- unique(df$entrezid)
 
     # Sort: decreasing
     geneList <- sort(geneList, decreasing=T) 
@@ -896,22 +908,23 @@ for (x in my.clusters) {
     print(head(geneList))
 
 
-    gse <- gseGO(geneList=geneList, 
-                 OrgDb=id.db,
-                 keyType="SYMBOL", # Check out supported keytypes with keytypes(id.db)
-                 ont="BP",     # "ALL", "CC", "MF", or "BP"
-                 verbose=T, 
-                 minGSSize=3,   # Min gene set size 
-                 maxGGSize=800, # Max gene set size
-                 pvalueCutoff=0.05, 
-                 pAdjustMethod="BH",
-                 nPerm=10000)   # Number of permutations
+    # Run GSEA (default setting was used except pvalueCutoff)
+    gse <- gseKEGG(geneList=geneList, 
+                 organism=organism.kegg,
+                 verbose=T,
+                 pvalueCutoff=0.1) 
 
+    # Save the GSEA object 
     gse.list[[x]] <- gse 
+
+
 
 }
 
+# Explore the output GSEA objects
 gse.list
+
+############# No enriched pathways were discovered even though pval cutoff was set to 0.1
 
 
 ```
