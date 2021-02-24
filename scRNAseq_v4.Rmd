@@ -515,18 +515,18 @@ plotDispEsts(dds.list[[x]], main=paste("Dispersion in Cluster", x))
 ```{r extract_results}
 
 res.list <- sce.list
+alpha <- 0.1
 
 # Set a vector storing contrast 
 Contrast <- c(Condition, compare.set)
 
 for (x in my.clusters) {
 
-
 # Extract results
 res <- results(dds.list[[x]], contrast=Contrast, alpha=alpha)
 res.df <- as.data.frame(res) %>% 
     rownames_to_column(var="Gene") %>%
-    mutate(Statistics=ifelse(padj > 0.05 | is.na(padj), 
+    mutate(Statistics=ifelse(padj > alpha | is.na(padj), 
                              "Insignificant", 
                              ifelse(log2FoldChange > 0, "Increase", "Decrease")),
     LogOdds=-log10(padj), 
