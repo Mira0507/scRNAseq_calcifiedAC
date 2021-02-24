@@ -747,7 +747,8 @@ annot.list <- sce.list   # for heatmap annotation tables
 for (x in my.clusters) {
 
     # Assign required inputs and variables
-    res.df <- res.list[[x]]
+    res.df <- subset(res.list[[x]], 
+                     Statistics %in% c("Increase", "Decrease"))
     norm.counts <- counts(dds.list[[x]], normalized=T)
     de.meta <- de.meta.list[[x]]
 
@@ -791,7 +792,7 @@ for (x in my.clusters) {
 
 
 
-```{r visualize_top20, fig.width=12, fig.height=10}
+```{r heatmap_top20, fig.width=12, fig.height=10}
 
 # Create a list storing heatmaps (required due to graphic errors in kitting)
 hmap.fdr.list <- list()
@@ -820,6 +821,12 @@ for (x in my.clusters) {
 
 }
 
+```
+
+
+
+
+```{r boxplot_top20, fig.width=12, fig.height=10}
 
 
 for (x in my.clusters) {
