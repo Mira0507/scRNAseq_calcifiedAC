@@ -1259,7 +1259,7 @@ for (j in top.cmarkers$Cluster) {
 integ.seurat <- RenameIdents(integ.seurat,
                              "0"="CTL/NK", 
                              "1"="T",
-                             "2"="ECM", 
+                             "2"="Fibroblast", 
                              "3"="EC",
                              "4"="DC/Macrophage", 
                              "5"="SMC", 
