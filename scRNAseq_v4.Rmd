@@ -65,7 +65,7 @@ integ.seurat <- readRDS("integ.seurat_label.rds")
 integ.seurat
 
 # Set your cluster of interest (this has to be determined by users)
-my.clusters <- c("ECM", "CTL/NK")
+my.clusters <- c("Fibroblast", "CTL/NK")
 
 # Create an empty list to store subset seurat objects
 subset.list <- list()
