@@ -14,7 +14,6 @@ author: "Mira Sohn"
 
 ```{r global_options, include=FALSE}
 
-
 knitr::opts_chunk$set(
     warning=FALSE,
     message=FALSE
