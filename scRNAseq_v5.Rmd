@@ -1,0 +1,949 @@
+---
+output: html_document
+title: "Pseudobulk DE Analysis of Calcified Atherosclerotic Plaque by Cluster"
+author: "Mira Sohn" 
+---
+
+## Raw data 
+
+#### - **Stuby number**: [GSE159677](Link: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE159677)
+
+#### - **Method**: Calcified atherosclerotic core (AC) plaques and patient-matched proximal adjacent (PA) portions of carotid artery were collected from three patients undergoing carotid endarterectomy and were assessed using single cell RNA-seq.
+
+#### - **Data**: Supplementary file -> GSE159677_AGGREGATEMAPPED-tisCAR6samples_featurebcmatrixfiltered.tar.gz -> barcodes.tsv.gz, feature.tsvgz, matrix.mtx.gz 
+
+```{r global_options, include=FALSE}
+
+
+knitr::opts_chunk$set(
+    warning=FALSE,
+    message=FALSE
+    )
+
+
+```
+
+## Loading packages 
+
+```{r loading_packages}
+
+library(Matrix)
+library(Matrix.utils)
+library(tidyverse)
+library(data.table)
+library(ggrepel)
+library(Seurat)
+library(AnnotationHub)
+library(cowplot)
+library(ensembldb)
+library(SingleCellExperiment)
+library(scater)
+library(pheatmap)
+library(RColorBrewer)
+library(DESeq2)
+library(gridExtra)
+library(clusterProfiler)
+library(DOSE)
+library(org.Hs.eg.db)
+
+
+```
+
+
+## Loading the Seurat object 
+
+#### - The seurat object has been undergone QC, integration, and clustering using the Seurat package
+
+#### - Reference: [HBC training](https://github.com/hbctraining/scRNA-seq_online/blob/master/lessons/pseudobulk_DESeq2_scrnaseq.md)
+
+### Loading and subsetting the Seurat object by cluster
+
+```{r load_seurat_object}
+
+# Load the Seurat object
+integ.seurat <- readRDS("integ.seurat_label_v1.1.rds")
+integ.seurat
+
+# Set your cluster of interest (this has to be determined by users)
+my.clusters <- c("CTL/NK I", "CTL/NK II")
+
+# Create an empty list to store subset seurat objects
+subset.list <- list()
+
+
+# Subset and store the objects in the list 
+for (x in my.clusters) {
+
+    subset.list[[x]] <- subset(integ.seurat, idents=x)
+    dimension <- dim(subset.list[[x]])
+    print(paste("Number of cells in the cluster", 
+                x, 
+                "is", 
+                dimension[2], 
+                "out of", 
+                dimension[1]))
+
+}
+
+# Explore the output subset list
+subset.list
+```
+
+### Extracting read counts and metadata by cluster
+
+
+```{r subset_by_cluster}
+
+# Initiate lists storing subsetted counts and metadata
+counts.list <- subset.list
+meta.list <- subset.list
+
+for (x in my.clusters) {
+
+    # Extract raw read counts by cluster and save in the list
+    counts.list[[x]] <- subset.list[[x]]@assays$RNA@counts
+
+    # Extract metadata by cluster and save in the list
+    cluster.meta <- subset.list[[x]]@meta.data 
+    cluster.meta$Cluster <- x 
+    meta.list[[x]] <- cluster.meta 
+
+    # Explore the outputs
+    print(head(counts.list[[x]]))
+    print(head(meta.list[[x]]))
+}
+
+
+
+
+
+```
+
+## Quality Control using the scater package
+
+### Creating a SingleCellExperiment object 
+
+```{r create_sce}
+
+# Initiate a list to store sce objects
+sce.list <- subset.list
+
+# Create SingleCellExperiment objects and store in the list
+for (x in my.clusters) {
+
+    # Create an sce sce object
+    sce <- SingleCellExperiment(assays=list(counts=counts.list[[x]]), 
+                                colData=meta.list[[x]])
+
+    sce.list[[x]] <- sce
+
+    # Explore the output
+    print(assays(sce))
+    print(dim(counts(sce)))
+    print(counts(sce)[1:5, 1:5])  # rows=genes, cols=cells
+    print(dim(colData(sce)))
+    print(head(colData(sce)))
+}
+
+# Explore the generated sce objects
+sce.list
+
+# Assign variables: has to be done manually by users in every single analysis
+Condition <- "Tissue"
+compare.set <- c("Atherosclerotic Core", "Proximal Adjacent")
+alpha <- 0.05
+
+
+```
+
+
+### Quality Control (QC)
+
+#### - Uses [**scater**](https://bioconductor.org/packages/release/bioc/vignettes/scater/inst/doc/overview.html) package 
+
+#### - References: [scater doc](https://bioconductor.org/packages/release/bioc/vignettes/scater/inst/doc/overview.html), [scater manual](https://bioconductor.org/packages/release/bioc/manuals/scater/man/scater.pdf), [HBC training](https://github.com/hbctraining/scRNA-seq_online/blob/master/lessons/pseudobulk_DESeq2_scrnaseq.md)
+
+#### - plotColData(): tests whether the number of genes detected ("detected") is correlated with total counts ("sum") in the cells. You can set the colour_by= argument to any variables in the metadata.  
+
+#### getVarianceExplained(): calculates the percentage of variance of each gene’s expression that is explained by each variable in the colData of the SingleCellExperiment object. This is useful for diagnosing batch effects or to quickly verify that a treatment has an effect.
+
+
+```{r QC_overview}
+
+
+# Set a function plotting QC overview using plotColData()
+qcview.fn <- function(my.sce, my.interest, cluster) {
+
+    plotColData(my.sce, x="sum", y="detected", colour_by=my.interest) + 
+                ggtitle(paste("QC Plot by", my.interest, "in Cluster", cluster))
+
+}
+
+
+for (x in my.clusters) {
+
+    # Calculate QC metrics
+    sce.list[[x]] <- addPerCellQC(sce.list[[x]])
+
+
+    sce <- sce.list[[x]]
+
+    # Plot the QC overview
+    print(qcview.fn(sce, "Tissue", x))   # by Tissue  
+    print(qcview.fn(sce, "Sample", x))   # by Tissue
+
+
+    # Plot variance explained using getVariableExplained()
+    sce.list[[x]] <- logNormCounts(sce.list[[x]])  # Normalization is a prerequisite 
+
+    vars <- getVarianceExplained(sce.list[[x]], 
+                             variables=c("Tissue", 
+                                         "Sample", 
+                                         "Phase"))
+
+    explanatory.plot <- plotExplanatoryVariables(vars) + 
+        ggtitle(paste("Variation Explained in Cluster", x)) 
+
+    print(explanatory.plot)
+
+}
+
+
+
+
+
+```
+
+
+
+### Removing outlier cells
+
+#### - determines outlier cells in counts based on median-absolute-deviation (MAD).
+
+#### - Reference: [isOutlier](https://www.rdocumentation.org/packages/scater/versions/1.0.4/topics/isOutlier)
+
+
+```{r remove_outlier_cells}
+
+# Determine outlier cells in gene expression using isOutlier()
+# 
+# arguments..  
+# metric: numeric or integer vector of values for a metric
+# nmads: scalar, number of median-absolute-deviations away from median required for a value to be called an outlier
+# type: character scalar, choice indicate whether outliers should be looked for at both tails (default: "both") or only at the lower end ("lower") or the higher end ("higher")
+# log: is log transformation required prior to outlier detection? T/F
+for (x in my.clusters) {
+
+    # Add a column indicating outliers
+    sce.list[[x]]$Outlier <- isOutlier(metric=sce.list[[x]]$total, 
+                                       nmads=5, 
+                                       type="both", 
+                                       log=F) 
+
+    # Remove the ourlier cells: cell level filtering
+    print(paste(x, "before filtering"))
+    print(dim(sce.list[[x]]))   # before removal
+    sce.list[[x]] <- sce.list[[x]][, !sce.list[[x]]$Outlier]
+    print(paste(x, "after cell level filtering"))
+    print(dim(sce.list[[x]]))   # after removal  
+
+    # Remove the genes below 10 counts: gene level filtering
+    sce.list[[x]] <- sce.list[[x]][rowSums(counts(sce.list[[x]]) > 1) >= 10,]
+
+    print(paste(x, "after gene level filtering"))
+    print(dim(sce.list[[x]]))  # after removal
+
+}
+
+
+
+
+```
+
+
+### Count aggregation to sample level
+
+#### - aggregates the counts per ID and Cluster
+
+```{r aggregation}
+
+# Initialize lists storing matrices and groups
+groups.list <- sce.list
+matrix.list <- sce.list
+
+for (x in my.clusters) {
+
+    # Update the groups
+    groups <- colData(sce.list[[x]])[, c("Sample", Condition, "Cluster")]
+
+    # Create a transformed and aggregated count matrix 
+    matrix.agg <- aggregate.Matrix(t(counts(sce.list[[x]])), 
+                                   groupings=groups, 
+                                   fun="sum")
+
+    groups.list[[x]] <- groups
+    matrix.list[[x]] <- matrix.agg
+
+    # Explore the output
+    print(paste("Matrix created in cluster", x))
+    print(matrix.agg[1:5, 1:5])
+    print(class(matrix.agg))
+    print(dim(matrix.agg))
+
+}
+
+
+
+# Expected matrix.agg format: 
+#
+#                                      AL669831.5 LINC00115 FAM41C SAMD11 NOC2L
+# 1_Atherosclerotic Core_B                      .         .      .      .     .
+# 1_Atherosclerotic Core_CTL/NK                 .         2      .      .    17
+# 1_Atherosclerotic Core_DC/Macrophage          3         6      2      .     7
+# 1_Atherosclerotic Core_EC                    14         8     15     10   133
+# 1_Atherosclerotic Core_ECM                    9         6      3     99    74
+
+
+```
+
+
+## DE analysis using DESeq2 
+
+### Preparing inputs for DE analysis 
+
+
+```{r prep_DE_inputs}
+
+# Initialize lists storing DESeq2 inputs
+de.counts.list <- sce.list  # for count input 
+de.meta.list <- sce.list    # for metadata input
+
+
+for (x in my.clusters) { 
+    
+    # Create a count matrix from the aggregated matrix and save in the list
+    # (DESseq2 requires rows=genes and cols=samples)
+    de.counts.list[[x]] <- t(matrix.list[[x]]) 
+
+    # Create metadata and save in the list
+    meta <- data.frame(ID=colnames(de.counts.list[[x]])) %>% 
+        separate(ID, c("Sample", Condition, "Cluster"),
+                 remove=F, sep="_") %>% 
+    mutate(Batch=ifelse(Sample %in% c(1, 2), 
+                        1, 
+                        ifelse(Sample %in% c(3, 4), 2, 3)))
+
+    meta$Tissue <- factor(meta$Tissue, levels=compare.set)
+    meta$Batch <- factor(meta$Batch)
+    rownames(meta) <- meta$ID
+
+    de.meta.list[[x]] <- meta
+
+    # Check out whether the sample ID is exactly the same 
+    # between the count and metadata inputs
+    print(identical(colnames(de.counts.list[[x]]), 
+                    rownames(de.meta.list[[x]])))
+
+    print(head(de.meta.list[[x]]))
+}
+
+
+
+
+```
+
+
+### Creating DESeq2 object
+
+
+```{r create_dds}
+
+# Initialize a list storing DESeq2 objects
+dds.list <- sce.list
+
+for (x in my.clusters) {
+
+    dds.list[[x]] <- DESeqDataSetFromMatrix(de.counts.list[[x]], 
+                                            colData=de.meta.list[[x]], 
+                                            design= ~ Tissue)
+
+}
+
+
+# Explore the output
+dds.list
+
+```
+
+
+### Quality control
+
+#### - Sequencing depth 
+
+```{r sequencing_depth}
+
+for (x in my.clusters) {
+
+    dds <- dds.list[[x]]
+    de.meta <- de.meta.list[[x]]
+
+# Create a data frame storing counts per sample
+s.depth <- as.data.frame(colSums(counts(dds))) %>% 
+    rownames_to_column(var="ID") 
+
+names(s.depth) <- c("ID", "Counts")
+s.depth <- inner_join(s.depth, de.meta, by="ID")
+
+# Plot the sequencing depth
+seq.dep.plot <- 
+    ggplot(s.depth, aes(x=Tissue, y=Counts, fill=Tissue)) + 
+    geom_bar(stat="identity", position="dodge") +
+    theme_bw() + 
+    theme(strip.text=element_text(size=10),
+          axis.text.x=element_blank()) +
+    ggtitle(paste("Sequencing Depth in Cluster", x, "by Batch")) + 
+    ylab("Read Counts") + 
+    facet_grid(~Batch)
+
+print(seq.dep.plot)
+
+}
+
+```
+
+
+#### PCA
+
+
+```{r PCA, fig.width=12}
+
+# Initialize a list storing vst objects
+vst.list <- sce.list
+
+# Set a function plotting PCA
+plotpca.fn <- function(VST, intgroup, cluster) { 
+
+    plotPCA(VST, intgroup) + 
+        theme_bw() + 
+        ggtitle(paste("PCA by", intgroup, "in Cluster", cluster))
+
+
+
+}
+
+for (x in my.clusters) {
+
+    # Create a vst object (instead of rlog)
+    vst <- vst(dds.list[[x]], blind=T)
+
+    vst.list[[x]] <- vst
+
+
+
+
+
+# Plot PCA
+p <- grid.arrange(plotpca.fn(vst, "Batch", x), 
+                  plotpca.fn(vst, Condition, x), nrow=1)
+
+print(p)
+
+}
+
+
+
+```
+
+
+#### Correlation Heatmap
+
+```{r corr_heatmap}
+
+for (x in my.clusters) {
+
+    vst <- vst.list[[x]]
+    de.meta <- de.meta.list[[x]]
+
+# Extract the vst matrix 
+vst.matrix <- assay(vst)
+
+# Construct a correlation
+vst.corr <- cor(vst.matrix)
+
+# Create a data frame for heatmap annotation
+anno <- de.meta[, c(Condition, "Batch")]
+rownames(anno) <- de.meta$ID
+
+# Display a heatmap from the correlation 
+p <- pheatmap(vst.corr, 
+         annotation=anno, 
+         main=paste("Correlation Heatmap in Cluster", x),  
+         show_rownames=F, 
+         show_colnames=F, 
+         border_color=NA)
+
+print(p)
+
+}
+
+
+
+```
+
+### Running DESeq
+
+
+```{r run_deseq}
+
+for (x in my.clusters) {
+
+# Run DE analysis using DESeq()
+dds.list[[x]] <- DESeq(dds.list[[x]])
+
+# Plot dispersion 
+plotDispEsts(dds.list[[x]], main=paste("Dispersion in Cluster", x))
+
+}
+
+
+```
+
+
+### Extracting results
+
+
+```{r extract_results}
+
+res.list <- sce.list
+alpha <- 0.1
+
+# Set a vector storing contrast 
+Contrast <- c(Condition, compare.set)
+
+for (x in my.clusters) {
+
+# Extract results
+res <- results(dds.list[[x]], contrast=Contrast, alpha=alpha)
+res.df <- as.data.frame(res) %>% 
+    rownames_to_column(var="Gene") %>%
+    mutate(Statistics=ifelse(padj > alpha | is.na(padj), 
+                             "Insignificant", 
+                             ifelse(log2FoldChange > 0, "Increase", "Decrease")),
+    LogOdds=-log10(padj), 
+    Label=ifelse(Statistics == "Insignificant", "", ifelse(LogOdds > 5, Gene, "")),
+    Abs_LFC=abs(log2FoldChange))
+
+res.list[[x]] <- res.df
+
+# Explore the output
+print(paste("Results in Cluster", x))
+print(head(res.df))
+
+} 
+
+
+```
+
+#### Volcano plot
+
+
+```{r volcano_plot, fid.width=12, fig.height=10}
+
+for (x in my.clusters) {
+
+    res.df <- res.list[[x]]
+
+p <- ggplot(res.df,
+       aes(x=log2FoldChange, 
+           y=LogOdds, 
+           color=Statistics,
+           label=Label)) + 
+geom_point(alpha=0.5) + 
+theme_bw() + 
+scale_color_manual(values=c("blue", "red", "grey")) +
+
+# Draw dashed lines to indicate log2FoldChange = +/- 1 
+geom_vline(xintercept=c(-1, 1), color="black", linetype="dashed") + 
+
+# Draw a dashed line to indicate logodds = 1
+geom_hline(yintercept=5, color="black", linetype="dashed") +
+ggtitle(paste("Volcano Plot in Cluster", x)) +
+ylab("-log(FDR)") + 
+geom_text_repel()
+
+print(p)
+
+}
+
+```
+
+
+
+
+#### Expression heatmap of total significant genes
+
+
+```{r expression_heatmap, fig.width=12, fig.height=10}
+
+# Set a function to create an expression heatmap 
+# rownames=TRUE (shows rownames) or FALSE (doesn't show rownames) 
+ex.heatmap.fn <- function(input.mtx, rownames, annot, Title) { 
+
+    pheatmap(input.mtx, 
+         annotation=annot, 
+         scale="row",    # set to z-score
+         show_rownames=rownames, 
+         border_color=NA, 
+         show_colnames=FALSE,
+         cluster_rows=TRUE, 
+         main=Title)
+}
+
+for (x in my.clusters) {
+
+    dds <- dds.list[[x]]
+
+    res.df <- res.list[[x]]
+
+    meta <- de.meta.list[[x]]
+
+# Extract a normalized count matrix from the DESeq object 
+norm.counts <- counts(dds, normalized=T)
+
+# Filter out rows the insignificant genes in the normalized count matrix 
+norm.counts <- norm.counts[res.df$Statistics != "Insignificant" & 
+                           !is.na(res.df$Statistics),]
+
+
+annot <- meta[, colnames(meta) %in% c(Condition, "Batch")]
+
+if (nrow(norm.counts) == 0) {
+
+    p <- paste("No significant gene was found in the cluster", x)
+
+} else {
+
+
+# Display a heatmap of total signficant genes (FDR < 0.05) 
+p <- ex.heatmap.fn(norm.counts, FALSE, annot,
+                   paste("Expression Heatmap of Significant Genes in Cluster", 
+                   x))
+
+
+
+}
+
+print(p)
+}
+
+
+```
+
+#### MA Plots
+
+
+```{r MA_plot, fig.widh=12, fig.heigh=10}
+
+for (x in my.clusters) {
+
+    df <- res.list[[x]]
+    p <- ggplot(df, 
+                aes(x=baseMean, 
+                    y=log2FoldChange, 
+                    color=Statistics, 
+                    label=Label)) +
+        geom_point(alpha=0.5) + 
+        theme_bw() + 
+        geom_text_repel() + 
+        scale_x_log10() + 
+        geom_hline(yintercept=c(-1, 1), color="black", linetype="dashed") + 
+        ggtitle(paste("MA Plot in", x, "Cells")) + 
+        scale_color_manual(values=c("blue", "red", "grey"))
+
+    print(p) }
+
+```
+
+
+#### Top 20 genes in FDR & log2FoldChange
+
+
+```{r set_functions}
+
+# Set a function rearranging data 
+get.topgenes.fn <- function(df, clean.by, asc, topN) {
+
+    # asc = TRUE (ascending) or FALSE (descending)
+    # Rearrange the rows by the given variable "cleaned.by"
+    if (asc) { 
+
+        top.genes <- arrange(df, clean.by)    
+
+    } else { 
+
+        top.genes <- arrange(df, desc(clean.by))
+
+    }
+
+    # Pull the genes 
+    top.genes <- head(top.genes, n=topN) %>% 
+            pull(Gene)
+
+    return(top.genes)
+
+}
+
+# Set a function cleaning a count matrix and data frame
+to.mtx.fn <- function(genes) {norm.counts[rownames(norm.counts) %in% genes,]}
+
+to.df.fn <- function(mtx) { 
+
+    filtered.df <- as.data.frame(mtx) %>% 
+        rownames_to_column(var="Gene") %>%
+        gather(ID, Count, -Gene) %>% 
+        inner_join(de.meta, by="ID")
+
+
+
+    return(filtered.df)
+
+}
+
+
+
+# Set a function plotting counts across the genes 
+topgene.plot.fn <- function(df, Title) {
+
+
+ggplot(df, 
+       aes(x=reorder(Gene, -Count), y=Count, color=Tissue, fill=Tissue)) + 
+geom_boxplot(alpha=0.5, position="dodge2") + 
+theme_bw() +
+scale_y_log10() + 
+ggtitle(Title) + 
+ylab("Log10 Normalized Counts") + 
+xlab("Genes")
+
+
+
+}
+
+
+
+
+
+```
+
+
+```{r create_inputs_for_plotting}
+
+# Initialize lists storing plot inputs (matrices, data frames, and annotations) 
+fdr20.mtx.list <- sce.list
+fdr20.df.list <- sce.list
+lfc20.mtx.list <- sce.list
+lfc20.df.list <- sce.list
+annot.list <- sce.list   # for heatmap annotation tables
+
+for (x in my.clusters) {
+
+    # Assign required inputs and variables
+    res.df <- subset(res.list[[x]], 
+                     Statistics %in% c("Increase", "Decrease"))
+    norm.counts <- counts(dds.list[[x]], normalized=T)
+    de.meta <- de.meta.list[[x]]
+
+    # Extract top genes in FDR and LFC
+    fdr.genes <- get.topgenes.fn(res.df, res.df$padj, TRUE, 20)
+    lfc.genes <- get.topgenes.fn(res.df, res.df$Abs_LFC, FALSE, 20)
+
+    # Create and save the matrices
+    fdr20.mtx.list[[x]] <- to.mtx.fn(fdr.genes)
+    lfc20.mtx.list[[x]] <- to.mtx.fn(lfc.genes)
+
+    # Create and save the data frames
+    fdr20.df.list[[x]] <- to.df.fn(fdr20.mtx.list[[x]]) 
+    lfc20.df.list[[x]] <- to.df.fn(lfc20.mtx.list[[x]])
+
+    # Create and save the annotation table
+    annot.list[[x]] <- de.meta[, colnames(de.meta) %in% c(Condition, "Batch")]
+
+}
+
+# Explore the outputs 
+for (x in my.clusters) {
+
+    print(paste("FDR matrix in cluster", x)) 
+    print(dim(fdr20.mtx.list[[x]]))
+    print(paste("FDR data frame in cluster", x))
+    print(dim(fdr20.df.list[[x]]))
+    print(paste("LFC matrix in cluster", x))
+    print(dim(lfc20.mtx.list[[x]]))
+    print(paste("LFC data frame in cluster", x))
+    print(dim(lfc20.df.list[[x]]))
+    print(paste("Annotation Table for expression heatmap in cluster", x))
+    print(annot.list[[x]])
+
+}
+
+
+
+
+```
+
+
+
+```{r heatmap_top20, fig.width=12, fig.height=10}
+
+# Create a list storing heatmaps (required due to graphic errors in kitting)
+hmap.fdr.list <- list()
+hmap.lfc.list <- list()
+
+for (x in my.clusters) {
+
+    # Assign names
+    t1 <- paste("Top 20 Genes in FDR in Cluster", x)
+    t2 <- paste("Top 20 Genes in log2FoldChange in Cluster", x)
+
+    # Create plots and save 
+    hmap.fdr.list[[x]] <- ex.heatmap.fn(fdr20.mtx.list[[x]], 
+                        TRUE, 
+                        annot.list[[x]], 
+                        t1)
+
+    print(hmap.fdr.list[[x]])
+
+    hmap.lfc.list[[x]] <- ex.heatmap.fn(lfc20.mtx.list[[x]],
+                        TRUE, 
+                        annot.list[[x]],
+                        t2)
+
+    print(hmap.lfc.list[[x]])
+
+}
+
+```
+
+
+
+
+```{r boxplot_top20, fig.width=12, fig.height=10}
+
+
+for (x in my.clusters) {
+
+    # Assign names
+    t1 <- paste("Top 20 Genes in FDR in Cluster", x)
+    t2 <- paste("Top 20 Genes in log2FoldChange in Cluster", x)
+
+    # Create plots and save
+    p3 <- topgene.plot.fn(fdr20.df.list[[x]], t1) 
+
+    p4 <- topgene.plot.fn(lfc20.df.list[[x]], t2)
+
+
+    print(p3)
+    print(p4)
+
+}
+
+
+
+
+```
+
+## Gene Set Enrichment Analysis (GSEA) 
+
+#### - Package: [clusterProfiler](https://bioconductor.org/packages/release/bioc/html/clusterProfiler.html), [AnnotationHub](https://bioconductor.org/packages/release/bioc/html/AnnotationHub.html)
+
+#### - Note: Somehow EnsDb db causes en error when running GSEA. So it is recommended to set the OrgDb argument to org.Hs.eg.db (for humen) or org.Mm.eg.db (for mouse) instead. 
+
+
+
+
+
+```{r annotationhub}
+
+# Set species and DB namedb
+organism <- "Homo sapiens"
+organism.kegg <- "hsa"
+DB <- "EnsDb"   # e.g. EnsDb, OrgDb, etc
+
+# Connect to AnnotationHub
+ah <- AnnotationHub(hub=getAnnotationHubOption("URL"))
+
+# Bring the Ensembl DB 
+anno.db <- query(ah, 
+                 pattern=c(organism, DB), 
+                 ignore.case=T)
+
+# Find the id from most recent annotation data
+id <- mcols(anno.db) %>% 
+    rownames() %>%
+    tail(1)
+
+# Download the most recent annotation table 
+id.db <- ah[[id]]
+
+# Extract gene-level info and save as a data frame 
+gene.db <- genes(id.db, return.type="data.frame")
+
+
+```
+
+```{r GSEA}
+
+# Initialize a list storing GSEA objects by cluster
+gse.list <- dds.list
+
+for (x in my.clusters) {
+
+    df <- subset(res.list[[x]], 
+                 Statistics != "Insignificant") %>% 
+        left_join(gene.db, by=c("Gene"="gene_name"))
+
+    # Extract log2FoldChange values
+    geneList <- unique(df$log2FoldChange)
+
+    # Name: genes
+    names(geneList) <- unique(df$entrezid)
+
+    # Sort: decreasing
+    geneList <- sort(geneList, decreasing=T) 
+
+
+
+    print(head(df))
+    print(head(geneList))
+
+
+    # Run GSEA (default setting was used except pvalueCutoff)
+    gse <- gseKEGG(geneList=geneList, 
+                 organism=organism.kegg,
+                 verbose=T,
+                 pvalueCutoff=0.1) 
+
+    # Save the GSEA object 
+    gse.list[[x]] <- gse 
+
+
+
+
+}
+
+# Explore the output GSEA objects
+gse.list
+
+############# No enriched pathways were discovered even though pval cutoff was set to 0.1
+
+
+```
+
+
+
+
+
+```{r}
+
+sessionInfo()
+
+```
