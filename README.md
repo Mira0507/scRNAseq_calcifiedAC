@@ -15,11 +15,15 @@
 
 - Quality control, integration, sctransformation, clustering, marker identification: [scRNAseq_v1.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v1.Rmd)
 
+- Quality control, integration, sctransformation, clustering, marker identification (modified cluster naming): [scRNAseq_v1.1.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v1.1.Rmd)
+
 - Differential expression (DE) analysis in AC vs PA: [scRNAseq_v2.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v2.Rmd)
 
 - Pseudobulk DE analysis in AC vs PA by cluster: [scRNAseq_v3.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v3.Rmd)
 
-- Pseudobulk DE analysis and GSEA in AC vs PA in Fibroblasts and CTL/NK clusters: [scRNAseq_v4.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v4.Rmd)
+- Pseudobulk DE analysis and GSEA in AC vs PA in Fibroblast and CTL/NK clusters: [scRNAseq_v4.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v4.Rmd)
+
+- Pseudobulk DE analysis in AC vs PA in CTL/NK I and II: [scRNAseq_v5.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scRNAseq_v5.Rmd)
 
 
 
