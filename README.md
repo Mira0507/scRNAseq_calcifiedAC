@@ -9,6 +9,11 @@
 - Input file: [GSE159677_AGGREGATEMAPPED-tisCAR6samples_featurebcmatrixfiltered.tar.gz](https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE159677&format=file&file=GSE159677%5FAGGREGATEMAPPED%2DtisCAR6samples%5Ffeaturebcmatrixfiltered%2Etar%2Egz)
 
 
+### 2. Conda environment 
+
+- [scrna.yml](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/scrna.yml)
+
+
 ### 2. Workflow 
 
 - Preparation of cell cycle marker genes: [cellcycle_markers.Rmd](https://github.com/Mira0507/scRNAseq_calcifiedAC/blob/master/cellcycle_markers.Rmd)
